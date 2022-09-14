@@ -1,0 +1,16 @@
+org: tigaron
+service: train-checker-layer
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: python3.9
+  region: ap-southeast-1
+  stage: ${opt:stage, 'dev'}
+
+layers:
+  train-checker:
+    path: packages
+    compatibleRuntimes:
+      - python3.9
+    description: Dependencies for python train-checker function
