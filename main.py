@@ -1,3 +1,4 @@
+import re
 import json
 import requests
 from bs4 import BeautifulSoup
@@ -5,15 +6,18 @@ from bs4 import BeautifulSoup
 url = 'https://booking.kai.id/'
 
 def extract_source(url, params):
-  headers = { 'User-Agent': 'Mozilla/5.0' }
-  source = requests.get(url, headers=headers, params=params).text
-  return source
+  try:
+    headers = { 'User-Agent': 'Mozilla/5.0' }
+    response = requests.get(url, headers=headers, params=params)
+    response.raise_for_status()
+  except: raise
+  return response.text
 
 def extract_data(source):
-  soup = BeautifulSoup(source, 'lxml')
+  try: soup = BeautifulSoup(source, 'lxml')
+  except: raise
   data_wrapper = soup.find_all('div', class_='data-wrapper')
   result = list()
-
   for item in data_wrapper:
     train_name = item.find('div', class_='name').text
     train_class = item.find('div', class_='{kelas kereta}').text
@@ -31,7 +35,7 @@ def extract_data(source):
     ticket_price = item.find('div', class_='price').text
     seat_availability = item.find('small', class_='sisa-kursi').text
 
-    data = {
+    result.append({
       'train_name': train_name,
       'train_class': train_class,
       'travel_time': travel_time,
@@ -47,38 +51,56 @@ def extract_data(source):
         'arrival_date': arrival_date,
         'arrival_time': arrival_time
       }
-    }
-
-    result.append(data)
-
+    })
   return result
+
+def transform_month(string):
+  month_data = {
+    'JAN': 'Januari',
+    'FEB': 'Februari',
+    'MAR': 'Maret',
+    'APR': 'April',
+    'MAY': 'Mei',
+    'JUN': 'Juni',
+    'JUL': 'Juli',
+    'AUG': 'Agustus',
+    'SEP': 'September',
+    'OCT': 'Oktober',
+    'NOV': 'November',
+    'DEC': 'Desember'
+  }
+  for key, value in month_data.items():
+    string = re.sub(key, value, string)
+  return string
+
+def exception_handler(status_code, error_message):
+  return {
+    'statusCode': status_code,
+    'headers': { 'Content-Type': 'application/json' },
+    'body': json.dumps(str(error_message))
+  }
 
 def lambda_handler(event, context):
   try:
     origination = event['queryStringParameters']['from']
     destination = event['queryStringParameters']['to']
     tanggal = event['queryStringParameters']['date']
-    params = {
-      'origination': origination,
-      'destination': destination,
-      'tanggal': tanggal,
-      'adult': '1',
-      'infant': '0',
-      'submit': 'Cari+%26+Pesan+Tiket'
-    }
-    status = 200
-    data = extract_data(extract_source(url, params))
-  except:
-    status = 400
-    data = {
-      'message': 'Missing query parameters'
-    }
+  except: return exception_handler(400, 'Invalid or missing query parameter(s)')
 
-  response = {
-    'statusCode': status,
-    'headers': {
-      'Content-Type': 'application/json'
-    },
+  params = {
+    'origination': origination,
+    'destination': destination,
+    'tanggal': transform_month(tanggal),
+    'adult': '1',
+    'infant': '0',
+    'submit': 'Cari+%26+Pesan+Tiket'
+  }
+
+  try: data = extract_data(extract_source(url, params))
+  except: return exception_handler(404, 'Unable to fetch data at the moment')
+
+  return {
+    'statusCode': 200,
+    'headers': { 'Content-Type': 'application/json' },
     'body': json.dumps(data)
   }
-  return response
